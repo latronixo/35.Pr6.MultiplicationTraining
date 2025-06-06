@@ -7,10 +7,11 @@
 
 import SwiftUI
 
+// Question.swift
 struct Question {
-    var firstMultiplier: Double
-    var secondMultiplier: Double
-    var answer: Double {
+    var firstMultiplier: Int
+    var secondMultiplier: Int
+    var answer: Int {
         return firstMultiplier * secondMultiplier
     }
     
@@ -19,75 +20,159 @@ struct Question {
     }
 }
 
-struct ContentView: View {
-    @State private var firstMultiplier = 7.0             //1 множитель
-    private var questionsCount = [5, 10, 20]            //количество вопросов
-    @State private var selectedQuestionsCount = 5       //выбранное количество вопросов
-    @State private var secondMultiplier = [Double]()    //2 множитель
-    @State private var questions = [Question]()
-    
-    @State private var animationAmount = 0.0    //угол поворота кнопки (для анимации)
-    @State private var gameStarted = false      //флаг "игра начата"
+// SettingsView.swift
+struct SettingsView: View {
+    @Binding var firstMultiplier: Int
+    @Binding var selectedQuestionsCount: Int
+    var startGame: (Int, Int) -> Void
     
     var body: some View {
         VStack {
-            Text("Тренировка таблицы умножения")
-                .font(.title)
-            Spacer()
+            Text("Тренировка умножения")
+                .font(.title2)
             
-            //Text("\(firstMuliplier.formatted())")
-            //    .font(.headline)
-            Stepper("Первый множитель:          \(firstMultiplier.formatted())", value: $firstMultiplier, in: 2...12)
+            Spacer()
+            Text("Как вы хотите играть?")
+            Stepper("Первый множитель: \(firstMultiplier)", value: $firstMultiplier, in: 2...12)
             
             HStack {
                 Text("Количество вопросов:")
                 Spacer()
                 Picker("Количество вопросов", selection: $selectedQuestionsCount) {
-                    ForEach(questionsCount, id: \.self) {
-                        Text("\($0)")
+                    ForEach([5, 10, 20], id: \.self) { count in
+                        Text("\(count)")
                     }
                 }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
-            
-            Spacer()
             
             Button("Начать") {
-                withAnimation(.spring(duration: 1, bounce: 0.5)) {
-                    animationAmount += 360
-                }
-                generateQuestions()
+                startGame(firstMultiplier, selectedQuestionsCount)
             }
             .padding(50)
             .background(.indigo)
             .foregroundStyle(.white)
             .clipShape(.circle)
-            .rotation3DEffect(.degrees(animationAmount), axis: (x: 1, y: 0, z: 0))
         }
         .padding()
     }
-    
-    //генерируем новые вопросы:
-    func generateQuestions() {
-        
-        if questions.isEmpty {
-            for i in 0...19 {
-                //secondMultiplier.append(Double(Int.random(in: 2...12)))
-                questions.append(Question(firstMultiplier: firstMultiplier, secondMultiplier: Double(Int.random(in: 2...12)) ))
-                print("secondMultiplier[\(i)] = \(questions[i].secondMultiplier)")
-            }
-        } else {
-            questions.shuffle()
-            print("secondMultiplier = \(questions)")
-        }
+}
 
-        //запускаем таймер на 1 секунду
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
+// GameView.swift
+struct GameView: View {
+    @State private var currentQuestionIndex = 0
+    @State private var correctAnswers = 0
+    @State private var showAlert = false
+    @State private var userAnswer: String = ""
+    @State private var isGameOver = false
+    @FocusState private var isTextFieldFocused: Bool  // Добавляем @FocusState
+        
+    var questions: [Question]
+    var startOver: () -> Void
+    
+    var body: some View {
+        VStack {
+            if !isGameOver {
+                Text("Тренировка таблицы умножения")
+                    .font(.title2)
+                Text(questions[currentQuestionIndex].getQuestion())
+                    .font(.largeTitle)
+                    .frame(height: 200)
+                    .background(Color.white)
+                    .cornerRadius(10)
+                    .padding()
+                
+                TextField("Ответ", text: $userAnswer)
+                    .keyboardType(.numberPad)
+                    .textInputAutocapitalization(.never)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(height: 60)
+                    .padding()
+                    .onChange(of: userAnswer) {
+                        // Фильтруем ввод, оставляем только цифры
+                        userAnswer = userAnswer.filter { "0123456789".contains($0) }
+                    }
+                    .onSubmit {
+                        checkAnswer()
+                    }
+                    .focused($isTextFieldFocused)  // Добавляем фокус
+                
+                Button("Проверить") {
+                    checkAnswer()
+                }
+                .padding()
+                .background(.blue)
+                .foregroundColor(.white)
+                .clipShape(Capsule())
+            } else {
+                Text("Игра окончена!")
+                    .font(.largeTitle)
+            }
+            
+            Button("Заново") {
+                startOver()
+            }
+            .padding()
+            .background(.orange)
+            .foregroundColor(.white)
+            .clipShape(Capsule())
+        }
+        .onAppear{
+            isTextFieldFocused = true
+        }
+        .alert("Результаты", isPresented: $showAlert) {
+        } message: {
+            Text("Вы ответили правильно на \(correctAnswers) из \(questions.count) вопросов")
         }
     }
     
+    func checkAnswer() {
+        guard let userAnswerInt = Int(userAnswer) else { return }
+        let correct = userAnswerInt == questions[currentQuestionIndex].answer
+        if correct {
+            correctAnswers += 1
+        }
+        currentQuestionIndex += 1
+        userAnswer = ""
+        isTextFieldFocused = true  // Возвращаем фокус после проверки
+                
+        if currentQuestionIndex >= questions.count {
+            isGameOver = true
+            showAlert = true
+        }
+    }
+}
+
+// ContentView.swift
+struct ContentView: View {
+    @State private var firstMultiplier = 7
+    @State private var selectedQuestionsCount = 5
+    @State private var isGameActive = false
+    @State private var gameQuestions: [Question] = []
+    
+    var body: some View {
+        VStack {
+            if isGameActive {
+                GameView(questions: gameQuestions, startOver: {
+                    isGameActive = false
+                })
+            } else {
+                SettingsView(firstMultiplier: $firstMultiplier,
+                            selectedQuestionsCount: $selectedQuestionsCount) { first, count in
+                    isGameActive = true
+                    gameQuestions = generateQuestions(firstMultiplier: first, count: count)
+                 }
+             }
+         }
+     }
+                 
+     func generateQuestions(firstMultiplier: Int, count: Int) -> [Question] {
+         return (0..<count).map { _ in
+             Question(firstMultiplier: firstMultiplier, secondMultiplier: Int.random(in: 2...12))
+         }
+     }
 }
 
 #Preview {
-    ContentView()
+ ContentView()
 }
